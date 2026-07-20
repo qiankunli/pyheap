@@ -589,7 +589,10 @@ def _write_objects_and_return_types(
         for r_id in referent_ids:
             writer.write_unsigned_long(r_id)
 
-        # Attributes -- write them only for non-"common" types.
+        # Attributes are explanatory metadata, not object graph edges. Keep reference
+        # discovery above unconditional: --no-attribute may reduce detail, but it must
+        # not change retained-heap or inbound-reference conclusions.
+        # Write attributes only for non-"common" types.
         if type_ not in common_types:
             attrs: List[Tuple[str, object]] = []
             if dump_attributes:
