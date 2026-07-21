@@ -78,6 +78,7 @@ def retained_heap(args: argparse.Namespace) -> None:
                 heap_file_name=args.file,
                 heap=heap,
                 retained_heap=retained_heap,
+                inbound_references=inbound_references,
                 top_n=args.top_n,
             )
         )

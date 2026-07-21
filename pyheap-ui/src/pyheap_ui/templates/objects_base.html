@@ -24,7 +24,9 @@
     <p><strong>Size:</strong> {{ obj.size | big_number | safe }}&nbsp;B</p>
     <p><strong>Retained heap:</strong> {{ retained_heap.get_for_object(address) | big_number | safe }}&nbsp;B</p>
     <p><strong>String representation:</strong> <span class="inline-object-str text-muted">
-        {% if obj.str_repr|length > 1000 %}
+        {% if obj.str_repr is none %}
+        <span class="text-muted">Not captured</span>
+        {% elif obj.str_repr|length > 1000 %}
         <span>{{ obj.str_repr|truncate(1000, end="") }} <a title="Expand" onclick="toggleFullText(event)" href="#">...</a></span>
         <span style="display: none;">{{ obj.str_repr }}</span>
         {% else %}

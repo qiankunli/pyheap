@@ -37,10 +37,11 @@ def test_retained_heap_json_uses_same_protocol(capsys) -> None:
     heap = MagicMock()
     heap.objects = {}
     retained = MagicMock()
+    inbound_references = MagicMock()
     analysis = {"schema": "pyheap.analysis/v1", "retained_heap": {"status": "complete"}}
 
     with patch.object(analyzer, "_load_heap", return_value=heap), patch.object(
-        analyzer, "InboundReferences"
+        analyzer, "InboundReferences", return_value=inbound_references
     ), patch.object(
         analyzer, "provide_retained_heap_with_caching", return_value=retained
     ), patch.object(
@@ -59,6 +60,7 @@ def test_retained_heap_json_uses_same_protocol(capsys) -> None:
         heap_file_name="heap.pyheap",
         heap=heap,
         retained_heap=retained,
+        inbound_references=inbound_references,
         top_n=7,
     )
 
