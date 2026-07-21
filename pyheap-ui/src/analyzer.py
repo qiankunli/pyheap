@@ -23,6 +23,7 @@ import sys
 import time
 import logging
 
+from pyheap_ui.analysis import build_heap_analysis
 from pyheap_ui.heap import (
     provide_retained_heap_with_caching,
     InboundReferences,
@@ -41,21 +42,46 @@ handler.setFormatter(formatter)
 LOG.addHandler(handler)
 
 
-def retained_heap(args: argparse.Namespace) -> None:
+def _load_heap(file_name: str):
     start = time.monotonic()
-    LOG.info("Loading file %s", args.file)
+    LOG.info("Loading file %s", file_name)
 
-    with open(args.file, "rb") as f:
+    with open(file_name, "rb") as f:
         mm = mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ)
         reader = HeapReader(mm)
         heap = reader.read()
 
     LOG.info("Loading file finished in %.2f seconds", time.monotonic() - start)
+    return heap
+
+
+def _print_json(analysis) -> None:
+    print(json.dumps(analysis, indent=2))
+
+
+def summary(args: argparse.Namespace) -> None:
+    heap = _load_heap(args.file)
+    _print_json(build_heap_analysis(heap_file_name=args.file, heap=heap))
+
+
+def retained_heap(args: argparse.Namespace) -> None:
+    heap = _load_heap(args.file)
 
     inbound_references = InboundReferences(heap.objects)
     retained_heap = provide_retained_heap_with_caching(
         args.file, heap, inbound_references
     )
+
+    if args.format == "json":
+        _print_json(
+            build_heap_analysis(
+                heap_file_name=args.file,
+                heap=heap,
+                retained_heap=retained_heap,
+                top_n=args.top_n,
+            )
+        )
+        return
 
     terminal_columns, _ = shutil.get_terminal_size()
 
@@ -76,7 +102,7 @@ def retained_heap(args: argparse.Namespace) -> None:
         type_ = heap.types[obj.type]
         print(
             row_format.format(
-                addr, type_, obj_retained_heap, obj.str_repr[:room_for_str]
+                addr, type_, obj_retained_heap, (obj.str_repr or "")[:room_for_str]
             )
         )
 
@@ -107,7 +133,21 @@ parser_retained_heap.add_argument(
 parser_retained_heap.add_argument(
     "--top-n", "-n", type=int, default=100, help="number of top objects to show"
 )
+parser_retained_heap.add_argument(
+    "--format",
+    choices=("text", "json"),
+    default="text",
+    help="output format (default: text)",
+)
 parser_retained_heap.set_defaults(func=retained_heap)
+
+parser_summary = subparsers.add_parser(
+    "summary", help="show heap summary using the stable JSON protocol"
+)
+parser_summary.add_argument(
+    "--file", "-f", type=str, required=True, help="heap file name"
+)
+parser_summary.set_defaults(func=summary)
 
 
 if __name__ == "__main__":
