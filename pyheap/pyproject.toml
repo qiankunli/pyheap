@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyheap"
-version = "0.7.0+doctor.1"
+version = "0.7.0+doctor.2"
 description = ""
 authors = ["Ivan Yurchenko <ivan@ivanyu.me>"]
 license = "Apache License 2.0"

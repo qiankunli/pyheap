@@ -16,7 +16,7 @@
 import hashlib
 
 from pyheap_ui.analysis import ANALYSIS_SCHEMA, build_heap_analysis
-from pyheap_ui.heap import RetainedHeap
+from pyheap_ui.heap import InboundReferences, RetainedHeap
 from pyheap_ui.heap_types import (
     Heap,
     HeapFlags,
@@ -29,6 +29,8 @@ from pyheap_ui.heap_types import (
 
 DICT_TYPE = 0x10
 STRING_TYPE = 0x20
+FILE_FINDER_TYPE = 0x30
+MODULE_TYPE = 0x40
 
 
 def _heap() -> Heap:
@@ -150,6 +152,28 @@ def test_build_summary_analysis(tmp_path) -> None:
 def test_build_retained_heap_analysis(tmp_path) -> None:
     heap_file = tmp_path / "heap.pyheap"
     heap_file.write_bytes(b"heap contents")
+    heap = _heap()
+    heap.objects[0x103] = HeapObject(
+        address=0x103,
+        type=FILE_FINDER_TYPE,
+        size=64,
+        referents=set(),
+    )
+    heap.objects[0x100].content = {0x101: 0x103}
+    heap.objects[0x100].referents.add(0x103)
+    heap.objects[0x104] = HeapObject(
+        address=0x104,
+        type=DICT_TYPE,
+        size=48,
+        referents={0x100},
+    )
+    heap.objects[0x105] = HeapObject(
+        address=0x105,
+        type=MODULE_TYPE,
+        size=72,
+        referents={0x104},
+    )
+    heap.types.update({FILE_FINDER_TYPE: "FileFinder", MODULE_TYPE: "module"})
     retained_heap = RetainedHeap(
         object_retained_heap={0x100: 220, 0x101: 100, 0x102: 40},
         thread_retained_heap={"MainThread": 100},
@@ -157,8 +181,9 @@ def test_build_retained_heap_analysis(tmp_path) -> None:
 
     result = build_heap_analysis(
         heap_file_name=str(heap_file),
-        heap=_heap(),
+        heap=heap,
         retained_heap=retained_heap,
+        inbound_references=InboundReferences(heap.objects),
         top_n=2,
     )
 
@@ -173,6 +198,17 @@ def test_build_retained_heap_analysis(tmp_path) -> None:
                 "shallow_size_bytes": 80,
                 "retained_size_bytes": 220,
                 "string_representation": None,
+                "container_profile": {
+                    "item_count": 1,
+                    "key_types": [{"type_name": "str", "object_count": 1}],
+                    "value_types": [{"type_name": "FileFinder", "object_count": 1}],
+                },
+                "inbound_reference_paths": [
+                    [
+                        {"object_address": "0x104", "type_name": "dict"},
+                        {"object_address": "0x105", "type_name": "module"},
+                    ]
+                ],
             },
             {
                 "object_address": "0x101",
@@ -180,6 +216,14 @@ def test_build_retained_heap_analysis(tmp_path) -> None:
                 "shallow_size_bytes": 100,
                 "retained_size_bytes": 100,
                 "string_representation": None,
+                "container_profile": None,
+                "inbound_reference_paths": [
+                    [
+                        {"object_address": "0x100", "type_name": "dict"},
+                        {"object_address": "0x104", "type_name": "dict"},
+                        {"object_address": "0x105", "type_name": "module"},
+                    ]
+                ],
             },
         ],
     }

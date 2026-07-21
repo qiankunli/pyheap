@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections import Counter, deque
 from typing import Any, Dict, List, Optional
 
 from pyheap_ui.heap import (
+    InboundReferences,
     RetainedHeap,
     objects_sorted_by_retained_heap,
     total_heap_size,
@@ -28,6 +30,9 @@ from pyheap_ui.heap_types import Address, Heap, HeapObject, HeapThread
 
 
 ANALYSIS_SCHEMA = "pyheap.analysis/v1"
+OWNER_TYPE_LIMIT = 20
+INBOUND_PATH_LIMIT = 10
+INBOUND_PATH_DEPTH = 3
 
 
 def _address(value: Address) -> str:
@@ -121,9 +126,79 @@ def _string_representation(heap: Heap, obj: HeapObject) -> Optional[str]:
     return obj.str_repr
 
 
+def _type_histogram(heap: Heap, addresses) -> List[Dict[str, Any]]:
+    counts = Counter(
+        heap.types[heap.objects[address].type]
+        for address in addresses
+        if address in heap.objects
+    )
+    return [
+        {"type_name": type_name, "object_count": object_count}
+        for type_name, object_count in sorted(
+            counts.items(), key=lambda item: (-item[1], item[0])
+        )[:OWNER_TYPE_LIMIT]
+    ]
+
+
+def _container_profile(heap: Heap, obj: HeapObject) -> Optional[Dict[str, Any]]:
+    if isinstance(obj.content, dict):
+        return {
+            "item_count": len(obj.content),
+            "key_types": _type_histogram(heap, obj.content.keys()),
+            "value_types": _type_histogram(heap, obj.content.values()),
+        }
+    if isinstance(obj.content, (list, set, tuple)):
+        return {
+            "item_count": len(obj.content),
+            "element_types": _type_histogram(heap, obj.content),
+        }
+    return None
+
+
+def _inbound_reference_paths(
+    heap: Heap,
+    inbound_references: Optional[InboundReferences],
+    address: Address,
+) -> List[List[Dict[str, Any]]]:
+    if inbound_references is None:
+        return []
+
+    paths: List[List[Dict[str, Any]]] = []
+    pending = deque([(address, [], {address})])
+    while pending and len(paths) < INBOUND_PATH_LIMIT:
+        current, path, seen = pending.popleft()
+        parents = sorted(inbound_references[current])
+        if not parents:
+            if path:
+                paths.append(path)
+            continue
+
+        for parent_address in parents:
+            if len(paths) >= INBOUND_PATH_LIMIT:
+                break
+            parent = heap.objects.get(parent_address)
+            if parent is None:
+                continue
+            parent_node = {
+                "object_address": _address(parent_address),
+                "type_name": heap.types[parent.type],
+            }
+            next_path = [*path, parent_node]
+            if (
+                parent_address in seen
+                or len(next_path) >= INBOUND_PATH_DEPTH
+                or parent_node["type_name"] == "module"
+            ):
+                paths.append(next_path)
+            else:
+                pending.append((parent_address, next_path, seen | {parent_address}))
+    return paths
+
+
 def _retained_heap_summary(
     heap: Heap,
     retained_heap: Optional[RetainedHeap],
+    inbound_references: Optional[InboundReferences],
     top_n: int,
 ) -> Dict[str, Any]:
     if retained_heap is None:
@@ -145,6 +220,10 @@ def _retained_heap_summary(
                 "shallow_size_bytes": obj.size,
                 "retained_size_bytes": retained_size,
                 "string_representation": _string_representation(heap, obj),
+                "container_profile": _container_profile(heap, obj),
+                "inbound_reference_paths": _inbound_reference_paths(
+                    heap, inbound_references, address
+                ),
             }
         )
 
@@ -160,6 +239,7 @@ def build_heap_analysis(
     heap_file_name: str,
     heap: Heap,
     retained_heap: Optional[RetainedHeap] = None,
+    inbound_references: Optional[InboundReferences] = None,
     top_n: int = 100,
 ) -> Dict[str, Any]:
     """Build the stable, consumer-neutral JSON representation of a heap analysis."""
@@ -183,5 +263,7 @@ def build_heap_analysis(
         "threads": [
             _thread_summary(heap, thread, retained_heap) for thread in heap.threads
         ],
-        "retained_heap": _retained_heap_summary(heap, retained_heap, top_n),
+        "retained_heap": _retained_heap_summary(
+            heap, retained_heap, inbound_references, top_n
+        ),
     }

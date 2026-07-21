@@ -83,6 +83,14 @@ stdout can be redirected or consumed as a machine protocol without filtering.
 - `retained_heap.status: complete` means retained sizes were calculated for the
   captured heap. `top_objects` contains at most `top_n` entries, ordered by retained
   size descending.
+- Retained top objects include an optional `container_profile`. For built-in dicts
+  it reports the item count plus key/value type histograms; built-in lists, sets,
+  and tuples report the item count plus an element type histogram. Histograms are
+  bounded and never include element string values.
+- Retained top objects include bounded `inbound_reference_paths`. Each path starts
+  at a direct owner and contains object address/type pairs, stopping at a module,
+  three edges, or an object-graph root. The field is empty when inbound references
+  were not supplied by the caller.
 - `string_representation` is `null` when the dump was captured without string
   representations.
 - Shallow and retained sizes describe objects captured by PyHeap. They are not
