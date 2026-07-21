@@ -179,6 +179,23 @@ Address         | Object type     | Retained heap size | String representation
 ...
 ```
 (in the repo root directory).
+
+Tools can consume a versioned JSON document instead of parsing this terminal table.
+The fast summary does not calculate retained heap:
+
+```bash
+$ PYTHONPATH=src poetry run python -m analyzer summary --file heap.pyheap > analysis.json
+```
+
+The retained heap command can populate the retained section of the same protocol:
+
+```bash
+$ PYTHONPATH=src poetry run python -m analyzer retained-heap \
+    --file heap.pyheap --top-n 100 --format json > analysis.json
+```
+
+See [PyHeap analysis JSON protocol v1](doc/analysis-json-v1.md) for field semantics
+and compatibility rules.
 </details>
 
 ## How It Works
